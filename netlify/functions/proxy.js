@@ -1,63 +1,62 @@
 const fetch = require("node-fetch");
 const FormData = require("form-data");
-const { IncomingForm } = require("formidable");
-const { Buffer } = require("buffer");
 
-// Pour que Netlify n’interprète pas le corps
-exports.handler = async (event, context) => {
+exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Méthode non autorisée" };
+    return {
+      statusCode: 405,
+      body: "Method Not Allowed",
+    };
   }
 
-  return new Promise((resolve, reject) => {
-    const form = new IncomingForm({ multiples: false });
+  const contentType =
+    event.headers["content-type"] || event.headers["Content-Type"];
+  if (!contentType.startsWith("multipart/form-data")) {
+    return {
+      statusCode: 400,
+      body: "Content-Type must be multipart/form-data",
+    };
+  }
 
-    // Parse le fichier de l'image
-    form.parse(event, async (err, fields, files) => {
-      if (err) {
-        return resolve({
-          statusCode: 500,
-          body: "Erreur parsing image: " + err.message,
-        });
-      }
+  // Netlify Functions encode body as base64 by default
+  const buffer = Buffer.from(event.body, "base64");
 
-      const targetUrl = fields.targetUrl || event.queryStringParameters?.target;
-      const uploadedFile = files.image;
+  // We manually build form-data with raw bytes and headers
+  const boundary = contentType.split("boundary=")[1];
+  const rawBody = `--${boundary}\r\n${buffer.toString()}\r\n--${boundary}--`;
 
-      if (!targetUrl || !uploadedFile) {
-        return resolve({
-          statusCode: 400,
-          body: "Paramètre ou fichier manquant",
-        });
-      }
+  const target = event.queryStringParameters?.target;
 
-      const fs = require("fs");
-      const fileData = fs.readFileSync(uploadedFile.filepath);
+  if (!target) {
+    return {
+      statusCode: 400,
+      body: "Missing ?target parameter",
+    };
+  }
 
-      const formData = new FormData();
-      formData.append("image", fileData, {
-        filename: uploadedFile.originalFilename,
-        contentType: uploadedFile.mimetype,
-      });
-
-      try {
-        const response = await fetch(targetUrl, {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await response.json();
-        return resolve({
-          statusCode: 200,
-          headers: { "Access-Control-Allow-Origin": "*" },
-          body: JSON.stringify(data),
-        });
-      } catch (error) {
-        return resolve({
-          statusCode: 500,
-          body: "Erreur proxy: " + error.message,
-        });
-      }
+  try {
+    const response = await fetch(target, {
+      method: "POST",
+      headers: {
+        "Content-Type": contentType,
+      },
+      body: buffer,
     });
-  });
+
+    const json = await response.json();
+
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(json),
+    };
+  } catch (err) {
+    return {
+      statusCode: 500,
+      body: "Proxy error: " + err.message,
+    };
+  }
 };
