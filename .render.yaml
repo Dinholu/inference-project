@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: inference-app
-    env: node
+    name: inference-proxy
+    runtime: node
     buildCommand: ""
     startCommand: npm start
     plan: free
