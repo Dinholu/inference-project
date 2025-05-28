@@ -2,7 +2,7 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <title>Détection d'objets</title>
+    <title>Détection d'objets alimentaires</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="./src/output.css" rel="stylesheet" />
   </head>
@@ -17,17 +17,32 @@
         id="apiUrl"
         placeholder="Entrez l'URL de l'API + /predict"
         class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
-        title="Choisissez une image à envoyer"
-        placeholder="Choisissez une image"
       />
-      <label for="imageInput" class="block text-left font-medium mb-1"></label>
+
       <input
         type="file"
         id="imageInput"
         accept="image/*"
         capture="environment"
-        class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
+        class="w-full p-2 border rounded"
       />
+
+      <div id="webcam-wrapper" class="hidden space-y-4">
+        <video id="webcam" autoplay playsinline class="w-full rounded"></video>
+        <button
+          id="captureBtn"
+          class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+        >
+          Capturer depuis webcam
+        </button>
+      </div>
+
+      <button
+        id="retakeBtn"
+        class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 hidden"
+      >
+        Reprendre une photo
+      </button>
 
       <button
         onclick="sendImage()"
@@ -36,7 +51,6 @@
         Envoyer
       </button>
 
-      <!-- Spinner overlay -->
       <div
         id="spinner"
         class="fixed inset-0 bg-white/70 dark:bg-black/70 backdrop-blur-sm flex justify-center items-center h-screen z-50 hidden"
@@ -63,12 +77,10 @@
         </svg>
       </div>
 
-      <div class="relative w-full mx-auto">
-        <canvas
-          id="canvas"
-          class="w-full max-h-[80vh] mx-auto rounded shadow"
-        ></canvas>
-      </div>
+      <canvas
+        id="canvas"
+        class="w-full max-h-[80vh] mx-auto rounded shadow"
+      ></canvas>
 
       <div
         id="results"
@@ -77,12 +89,22 @@
     </div>
 
     <script>
+      const isMobile = () => /Mobi|Android|iPhone/i.test(navigator.userAgent);
+
       const imageInput = document.getElementById("imageInput");
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
       const resultsDiv = document.getElementById("results");
       const apiUrlInput = document.getElementById("apiUrl");
       const spinner = document.getElementById("spinner");
+      const webcam = document.getElementById("webcam");
+      const webcamWrapper = document.getElementById("webcam-wrapper");
+      const captureBtn = document.getElementById("captureBtn");
+      const retakeBtn = document.getElementById("retakeBtn");
+
+      let originalImage = null;
+      let naturalWidth = 0;
+      let naturalHeight = 0;
 
       const COLORS = {
         twix: "red",
@@ -97,30 +119,101 @@
         lapin_pâques: "violet",
       };
 
-      let originalImage = null;
-      let naturalWidth = 0;
-      let naturalHeight = 0;
+      // Activer webcam uniquement sur desktop
+      if (!isMobile()) {
+        navigator.mediaDevices
+          .getUserMedia({ video: true })
+          .then((stream) => {
+            webcam.srcObject = stream;
+            webcamWrapper.classList.remove("hidden");
+          })
+          .catch((err) => console.warn("Webcam non disponible :", err));
+      }
 
-      imageInput.addEventListener("change", async () => {
+      captureBtn?.addEventListener("click", () => {
+        retakeBtn.classList.remove("hidden");
+
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = webcam.videoWidth;
+        tempCanvas.height = webcam.videoHeight;
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCtx.drawImage(webcam, 0, 0);
+
+        tempCanvas.toBlob((blob) => {
+          if (blob) {
+            originalImage = new File([blob], "capture.jpg", {
+              type: "image/jpeg",
+            });
+
+            const img = new Image();
+            img.onload = () => {
+              resizeAndDrawImage(img);
+              stopWebcam();
+              webcamWrapper.classList.add("hidden");
+            };
+            img.src = URL.createObjectURL(originalImage);
+          }
+        }, "image/jpeg");
+      });
+
+      imageInput.addEventListener("change", () => {
         const file = imageInput.files[0];
         if (!file || !file.type.startsWith("image/")) return;
 
+        retakeBtn.classList.remove("hidden");
+
+        if (!isMobile()) {
+          stopWebcam();
+          webcamWrapper.classList.add("hidden");
+        }
+
         const img = new Image();
         img.onload = () => {
-          naturalWidth = img.width;
-          naturalHeight = img.height;
-
-          const containerWidth = canvas.clientWidth || 600;
-          const scale = containerWidth / img.width;
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resizeAndDrawImage(img);
         };
         img.src = URL.createObjectURL(file);
         originalImage = file;
       });
+
+      function resizeAndDrawImage(img) {
+        naturalWidth = img.naturalWidth;
+        naturalHeight = img.naturalHeight;
+        const scale = canvas.clientWidth / naturalWidth;
+        canvas.width = naturalWidth * scale;
+        canvas.height = naturalHeight * scale;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      }
+
+      function stopWebcam() {
+        const stream = webcam.srcObject;
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          webcam.srcObject = null;
+        }
+      }
+
+      function retakeImage() {
+        imageInput.value = "";
+        originalImage = null;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        resultsDiv.classList.add("hidden");
+        retakeBtn.classList.add("hidden");
+
+        if (isMobile()) {
+          imageInput.click();
+        } else {
+          navigator.mediaDevices
+            .getUserMedia({ video: true })
+            .then((stream) => {
+              webcam.srcObject = stream;
+              webcamWrapper.classList.remove("hidden");
+            })
+            .catch((err) => console.warn("Erreur webcam :", err));
+        }
+      }
+
+      retakeBtn.addEventListener("click", retakeImage);
 
       async function sendImage() {
         const apiUrl = apiUrlInput.value.trim();
@@ -130,16 +223,13 @@
         }
 
         spinner.classList.remove("hidden");
-        saveApiUrlToCookie(apiUrl);
 
         const img = new Image();
         img.src = URL.createObjectURL(originalImage);
-
         img.onload = async () => {
           const convertCanvas = document.createElement("canvas");
           convertCanvas.width = img.naturalWidth;
           convertCanvas.height = img.naturalHeight;
-
           const convertCtx = convertCanvas.getContext("2d");
           convertCtx.drawImage(img, 0, 0);
 
@@ -164,17 +254,19 @@
                 resultsDiv.classList.remove("hidden");
               } finally {
                 spinner.classList.add("hidden");
+                retakeBtn.classList.remove("hidden");
               }
             },
             "image/jpeg",
             0.95
-          ); // compression à 95%
+          );
         };
       }
 
       function displayResults(data) {
         if (!data || !data.boxes) {
           resultsDiv.innerHTML = "<p>Aucune donnée retournée.</p>";
+          resultsDiv.classList.remove("hidden");
           return;
         }
 
@@ -193,20 +285,15 @@
       }
 
       function drawBoxes(boxes) {
-        if (!boxes || boxes.length === 0) return;
-
+        if (!boxes?.length) return;
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
+          resizeAndDrawImage(img);
           const scaleX = canvas.width / naturalWidth;
           const scaleY = canvas.height / naturalHeight;
-
           boxes.forEach((box) => {
             const [x1, y1, x2, y2] = box.xyxy.map(Number);
             const color = COLORS[box.class_name] || "black";
-
             ctx.strokeStyle = color;
             ctx.lineWidth = 2;
             ctx.strokeRect(
@@ -215,7 +302,6 @@
               (x2 - x1) * scaleX,
               (y2 - y1) * scaleY
             );
-
             ctx.fillStyle = color;
             ctx.font = "16px Arial";
             ctx.fillText(box.class_name, x1 * scaleX + 4, y1 * scaleY + 16);
@@ -224,22 +310,9 @@
         img.src = URL.createObjectURL(originalImage);
       }
 
-      function saveApiUrlToCookie(url) {
-        document.cookie = `apiUrl=${encodeURIComponent(
-          url
-        )}; max-age=2592000; path=/`;
-      }
-
-      function loadApiUrlFromCookie() {
-        const match = document.cookie.match(/(?:^|;) *apiUrl=([^;]*)/);
-        return match ? decodeURIComponent(match[1]) : "";
-      }
-
       window.addEventListener("DOMContentLoaded", () => {
-        const savedUrl = loadApiUrlFromCookie();
-        if (savedUrl) {
-          apiUrlInput.value = savedUrl;
-        }
+        const saved = document.cookie.match(/(?:^|;) *apiUrl=([^;]*)/);
+        if (saved) apiUrlInput.value = decodeURIComponent(saved[1]);
       });
     </script>
   </body>
