@@ -17,17 +17,32 @@
         id="apiUrl"
         placeholder="Entrez l'URL de l'API + /predict"
         class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
-        title="Choisissez une image à envoyer"
-        placeholder="Choisissez une image"
       />
-      <label for="imageInput" class="block text-left font-medium mb-1"></label>
-      <input
-        type="file"
-        id="imageInput"
-        accept="image/*"
-        capture="environment"
-        class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
-      />
+
+      <div id="image-select" class="space-y-4">
+        <input
+          type="file"
+          id="imageInput"
+          accept="image/*"
+          capture="environment"
+          class="w-full p-2 border rounded"
+        />
+
+        <div id="webcam-wrapper" class="hidden space-y-4">
+          <video
+            id="webcam"
+            autoplay
+            playsinline
+            class="w-full rounded"
+          ></video>
+          <button
+            id="captureBtn"
+            class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          >
+            Capturer depuis webcam
+          </button>
+        </div>
+      </div>
 
       <button
         onclick="sendImage()"
@@ -36,7 +51,6 @@
         Envoyer
       </button>
 
-      <!-- Spinner overlay -->
       <div
         id="spinner"
         class="fixed inset-0 bg-white/70 dark:bg-black/70 backdrop-blur-sm flex justify-center items-center h-screen z-50 hidden"
@@ -83,6 +97,9 @@
       const resultsDiv = document.getElementById("results");
       const apiUrlInput = document.getElementById("apiUrl");
       const spinner = document.getElementById("spinner");
+      const webcam = document.getElementById("webcam");
+      const webcamWrapper = document.getElementById("webcam-wrapper");
+      const captureBtn = document.getElementById("captureBtn");
 
       const COLORS = {
         twix: "red",
@@ -101,6 +118,55 @@
       let naturalWidth = 0;
       let naturalHeight = 0;
 
+      function isMobile() {
+        return /Mobi|Android|iPhone/i.test(navigator.userAgent);
+      }
+
+      if (!isMobile()) {
+        navigator.mediaDevices
+          .getUserMedia({ video: true })
+          .then((stream) => {
+            webcam.srcObject = stream;
+            webcamWrapper.classList.remove("hidden");
+          })
+          .catch((err) => console.warn("Webcam non disponible :", err));
+      }
+
+      captureBtn?.addEventListener("click", () => {
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = webcam.videoWidth;
+        tempCanvas.height = webcam.videoHeight;
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCtx.drawImage(webcam, 0, 0);
+
+        tempCanvas.toBlob((blob) => {
+          if (blob) {
+            originalImage = new File([blob], "capture.jpg", {
+              type: "image/jpeg",
+            });
+
+            const img = new Image();
+            img.onload = () => {
+              naturalWidth = img.width;
+              naturalHeight = img.height;
+              canvas.width = img.width;
+              canvas.height = img.height;
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+              // 🚫 Cacher la webcam après capture
+              webcamWrapper.classList.add("hidden");
+              const stream = webcam.srcObject;
+              if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach((track) => track.stop());
+              }
+              webcam.srcObject = null;
+            };
+            img.src = URL.createObjectURL(originalImage);
+          }
+        }, "image/jpeg");
+      });
+
       imageInput.addEventListener("change", async () => {
         const file = imageInput.files[0];
         if (!file || !file.type.startsWith("image/")) return;
@@ -109,12 +175,8 @@
         img.onload = () => {
           naturalWidth = img.width;
           naturalHeight = img.height;
-
-          const containerWidth = canvas.clientWidth || 600;
-          const scale = containerWidth / img.width;
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-
+          canvas.width = img.width;
+          canvas.height = img.height;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         };
@@ -139,7 +201,6 @@
           const convertCanvas = document.createElement("canvas");
           convertCanvas.width = img.naturalWidth;
           convertCanvas.height = img.naturalHeight;
-
           const convertCtx = convertCanvas.getContext("2d");
           convertCtx.drawImage(img, 0, 0);
 
@@ -168,7 +229,7 @@
             },
             "image/jpeg",
             0.95
-          ); // compression à 95%
+          );
         };
       }
 
@@ -187,7 +248,6 @@
         html += `</ul><p class="mt-2 text-sm text-gray-500">Temps : ${data.inference_time.toFixed(
           2
         )} ms</p>`;
-
         resultsDiv.innerHTML = html;
         resultsDiv.classList.remove("hidden");
       }
