@@ -9,32 +9,23 @@ exports.handler = async function (event) {
     };
   }
 
-  const contentType =
-    event.headers["content-type"] || event.headers["Content-Type"];
-  if (!contentType.startsWith("multipart/form-data")) {
-    return {
-      statusCode: 400,
-      body: "Content-Type must be multipart/form-data",
-    };
-  }
-
-  // Netlify Functions encode body as base64 by default
-  const buffer = Buffer.from(event.body, "base64");
-
-  // We manually build form-data with raw bytes and headers
-  const boundary = contentType.split("boundary=")[1];
-  const rawBody = `--${boundary}\r\n${buffer.toString()}\r\n--${boundary}--`;
-
-  const target = event.queryStringParameters?.target;
-
-  if (!target) {
-    return {
-      statusCode: 400,
-      body: "Missing ?target parameter",
-    };
-  }
-
   try {
+    // Récupère le body brut en binaire (base64 → buffer)
+    const buffer = Buffer.from(event.body, "base64");
+
+    // Lit l'en-tête Content-Type d'origine
+    const contentType =
+      event.headers["content-type"] || event.headers["Content-Type"];
+    const target = event.queryStringParameters?.target;
+
+    if (!target || !contentType.includes("multipart/form-data")) {
+      return {
+        statusCode: 400,
+        body: "Paramètres invalides. Assurez-vous de passer ?target= et multipart/form-data",
+      };
+    }
+
+    // Proxifie la requête brute
     const response = await fetch(target, {
       method: "POST",
       headers: {
@@ -56,7 +47,7 @@ exports.handler = async function (event) {
   } catch (err) {
     return {
       statusCode: 500,
-      body: "Proxy error: " + err.message,
+      body: "Erreur proxy: " + err.message,
     };
   }
 };
