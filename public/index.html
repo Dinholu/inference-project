@@ -123,37 +123,53 @@
       });
 
       async function sendImage() {
-        const file = originalImage;
-        const apiUrl = apiUrlInput.value;
-        if (!file || !apiUrl) {
+        const apiUrl = apiUrlInput.value.trim();
+        if (!originalImage || !apiUrl) {
           alert("Image ou URL manquante");
           return;
         }
 
-        const formData = new FormData();
-        formData.append("image", file);
-        formData.append("targetUrl", apiUrl);
-
         spinner.classList.remove("hidden");
+        saveApiUrlToCookie(apiUrl);
 
-        try {
-          saveApiUrlToCookie(apiUrl);
-          const response = await fetch("http://localhost:3000/proxy", {
-            method: "POST",
-            body: formData,
-          });
+        const img = new Image();
+        img.src = URL.createObjectURL(originalImage);
 
-          if (!response.ok) throw new Error("Erreur lors de l'envoi");
+        img.onload = async () => {
+          const convertCanvas = document.createElement("canvas");
+          convertCanvas.width = img.naturalWidth;
+          convertCanvas.height = img.naturalHeight;
 
-          const data = await response.json();
-          displayResults(data);
-          drawBoxes(data.boxes);
-        } catch (error) {
-          resultsDiv.innerHTML = `<p class="text-red-600">Erreur : ${error.message}</p>`;
-          resultsDiv.classList.remove("hidden");
-        } finally {
-          spinner.classList.add("hidden");
-        }
+          const convertCtx = convertCanvas.getContext("2d");
+          convertCtx.drawImage(img, 0, 0);
+
+          convertCanvas.toBlob(
+            async (jpegBlob) => {
+              const formData = new FormData();
+              formData.append("image", jpegBlob, "converted.jpg");
+              formData.append("targetUrl", apiUrl);
+
+              try {
+                const response = await fetch("/proxy", {
+                  method: "POST",
+                  body: formData,
+                });
+
+                if (!response.ok) throw new Error("Erreur lors de l'envoi");
+                const data = await response.json();
+                displayResults(data);
+                drawBoxes(data.boxes);
+              } catch (error) {
+                resultsDiv.innerHTML = `<p class="text-red-600">Erreur : ${error.message}</p>`;
+                resultsDiv.classList.remove("hidden");
+              } finally {
+                spinner.classList.add("hidden");
+              }
+            },
+            "image/jpeg",
+            0.95
+          ); // compression à 95%
+        };
       }
 
       function displayResults(data) {
