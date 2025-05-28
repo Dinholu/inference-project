@@ -138,13 +138,10 @@
 
         try {
           saveApiUrlToCookie(apiUrl);
-          const response = await fetch(
-            `/.netlify/functions/proxy?target=${encodeURIComponent(apiUrl)}`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
+          const response = await fetch("/.netlify/functions/proxy", {
+            method: "POST",
+            body: formData,
+          });
 
           if (!response.ok) throw new Error("Erreur lors de l'envoi");
 

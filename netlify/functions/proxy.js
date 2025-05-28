@@ -1,74 +1,63 @@
 const fetch = require("node-fetch");
 const FormData = require("form-data");
+const { IncomingForm } = require("formidable");
+const { Buffer } = require("buffer");
 
-exports.handler = async (event) => {
-  try {
-    // Netlify encode le body en base64 dans les fonctions
-    const body = Buffer.from(event.body, "base64");
-
-    const contentType =
-      event.headers["content-type"] || event.headers["Content-Type"];
-
-    if (!contentType || !contentType.includes("multipart/form-data")) {
-      return {
-        statusCode: 400,
-        body: "Contenu invalide, multipart attendu.",
-      };
-    }
-
-    // Extraire les limites de formData
-    const boundaryMatch = /boundary=(.+);?/.exec(contentType);
-    if (!boundaryMatch) {
-      return {
-        statusCode: 400,
-        body: "Impossible de déterminer le boundary.",
-      };
-    }
-
-    const boundary = boundaryMatch[1];
-
-    const formData = new FormData();
-    const filePart = {
-      value: body,
-      options: {
-        filename: "image.jpg",
-        contentType: "image/jpeg",
-      },
-    };
-
-    // Recréer le formData depuis le corps brut
-    formData.append("image", filePart.value, filePart.options);
-
-    // Récupérer l'URL cible depuis les paramètres de requête (query string)
-    const urlParams = new URLSearchParams(event.queryStringParameters);
-    const targetUrl = urlParams.get("target");
-
-    if (!targetUrl) {
-      return {
-        statusCode: 400,
-        body: "Paramètre ?target manquant",
-      };
-    }
-
-    const response = await fetch(targetUrl, {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await response.json();
-
-    return {
-      statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    };
-  } catch (err) {
-    return {
-      statusCode: 500,
-      body: "Erreur proxy: " + err.toString(),
-    };
+// Pour que Netlify n’interprète pas le corps
+exports.handler = async (event, context) => {
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Méthode non autorisée" };
   }
+
+  return new Promise((resolve, reject) => {
+    const form = new IncomingForm({ multiples: false });
+
+    // Parse le fichier de l'image
+    form.parse(event, async (err, fields, files) => {
+      if (err) {
+        return resolve({
+          statusCode: 500,
+          body: "Erreur parsing image: " + err.message,
+        });
+      }
+
+      const targetUrl = fields.targetUrl || event.queryStringParameters?.target;
+      const uploadedFile = files.image;
+
+      if (!targetUrl || !uploadedFile) {
+        return resolve({
+          statusCode: 400,
+          body: "Paramètre ou fichier manquant",
+        });
+      }
+
+      const fs = require("fs");
+      const fileData = fs.readFileSync(uploadedFile.filepath);
+
+      const formData = new FormData();
+      formData.append("image", fileData, {
+        filename: uploadedFile.originalFilename,
+        contentType: uploadedFile.mimetype,
+      });
+
+      try {
+        const response = await fetch(targetUrl, {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+        return resolve({
+          statusCode: 200,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify(data),
+        });
+      } catch (error) {
+        return resolve({
+          statusCode: 500,
+          body: "Erreur proxy: " + error.message,
+        });
+      }
+    });
+  });
 };
