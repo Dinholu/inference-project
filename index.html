@@ -13,16 +13,18 @@
       <input
         type="text"
         id="apiUrl"
-        placeholder="http://localhost:3000/proxy"
+        placeholder="rentrez l'URL de l'API + /predict"
         class="w-full p-2 border rounded"
       />
 
+      <label for="imageInput" class="block text-left font-medium mb-1"></label>
       <input
         type="file"
         id="imageInput"
         accept="image/*"
-        capture="environment"
         class="w-full p-2 border rounded"
+        title="Choisissez une image à envoyer"
+        placeholder="Choisissez une image"
       />
 
       <button
