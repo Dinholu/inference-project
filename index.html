@@ -21,6 +21,7 @@
         type="file"
         id="imageInput"
         accept="image/*"
+        capture="environment"
         class="w-full p-2 border rounded"
       />
 
@@ -31,16 +32,10 @@
         Envoyer
       </button>
 
-      <div id="image-container" class="relative w-full max-w-full mx-auto">
-        <img
-          id="preview"
-          src="#"
-          alt="Aperçu"
-          class="max-w-full max-h-[80vh] mx-auto hidden"
-        />
+      <div class="relative w-full mx-auto">
         <canvas
-          id="overlay"
-          class="absolute top-0 left-0 pointer-events-none"
+          id="canvas"
+          class="w-full max-h-[80vh] mx-auto rounded shadow"
         ></canvas>
       </div>
 
@@ -52,8 +47,8 @@
 
     <script>
       const imageInput = document.getElementById("imageInput");
-      const preview = document.getElementById("preview");
-      const overlay = document.getElementById("overlay");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
       const resultsDiv = document.getElementById("results");
       const apiUrlInput = document.getElementById("apiUrl");
 
@@ -70,34 +65,45 @@
         lapin_pâques: "violet",
       };
 
-      imageInput.addEventListener("change", () => {
+      let originalImage = null;
+      let naturalWidth = 0;
+      let naturalHeight = 0;
+
+      imageInput.addEventListener("change", async () => {
         const file = imageInput.files[0];
-        if (file) {
-          preview.src = URL.createObjectURL(file);
-          preview.onload = () => {
-            preview.classList.remove("hidden");
-            const ratio = preview.naturalWidth / preview.naturalHeight;
-            overlay.width = preview.clientWidth;
-            overlay.height = preview.clientWidth / ratio;
-            overlay.style.width = `${overlay.width}px`;
-            overlay.style.height = `${overlay.height}px`;
-          };
-        }
+        if (!file || !file.type.startsWith("image/")) return;
+
+        const img = new Image();
+        img.onload = () => {
+          naturalWidth = img.width;
+          naturalHeight = img.height;
+
+          const containerWidth = canvas.clientWidth || 600;
+          const scale = containerWidth / img.width;
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+        img.src = URL.createObjectURL(file);
+        originalImage = file;
       });
 
       async function sendImage() {
-        const file = imageInput.files[0];
+        const file = originalImage;
         const apiUrl = apiUrlInput.value;
         if (!file || !apiUrl) {
-          alert("Choisis une image ET une URL !");
+          alert("Image ou URL manquante");
           return;
         }
 
         const formData = new FormData();
         formData.append("image", file);
-        formData.append("targetUrl", apiUrl); // 👈 on envoie l'URL cible au backend
+        formData.append("targetUrl", apiUrl);
 
         try {
+          saveApiUrlToCookie(apiUrl);
           const response = await fetch("http://localhost:3000/proxy", {
             method: "POST",
             body: formData,
@@ -135,30 +141,58 @@
       }
 
       function drawBoxes(boxes) {
-        const ctx = overlay.getContext("2d");
-        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        if (!boxes || boxes.length === 0) return;
 
-        const scaleX = overlay.width / preview.naturalWidth;
-        const scaleY = overlay.height / preview.naturalHeight;
+        // redraw image first
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        boxes.forEach((box) => {
-          const [x1, y1, x2, y2] = box.xyxy.map(Number);
-          const color = COLORS[box.class_name] || "black";
+          const scaleX = canvas.width / naturalWidth;
+          const scaleY = canvas.height / naturalHeight;
 
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
-          ctx.strokeRect(
-            x1 * scaleX,
-            y1 * scaleY,
-            (x2 - x1) * scaleX,
-            (y2 - y1) * scaleY
-          );
+          boxes.forEach((box) => {
+            const [x1, y1, x2, y2] = box.xyxy.map(Number);
+            const color = COLORS[box.class_name] || "black";
 
-          ctx.fillStyle = color;
-          ctx.font = "16px Arial";
-          ctx.fillText(box.class_name, x1 * scaleX + 4, y1 * scaleY + 16);
-        });
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+              x1 * scaleX,
+              y1 * scaleY,
+              (x2 - x1) * scaleX,
+              (y2 - y1) * scaleY
+            );
+
+            ctx.fillStyle = color;
+            ctx.font = "16px Arial";
+            ctx.fillText(box.class_name, x1 * scaleX + 4, y1 * scaleY + 16);
+          });
+        };
+        img.src = URL.createObjectURL(originalImage);
       }
+
+      // Enregistre l'URL dans un cookie (exp 30 jours)
+      function saveApiUrlToCookie(url) {
+        document.cookie = `apiUrl=${encodeURIComponent(
+          url
+        )}; max-age=2592000; path=/`;
+      }
+
+      // Lit l'URL depuis les cookies
+      function loadApiUrlFromCookie() {
+        const match = document.cookie.match(/(?:^|;) *apiUrl=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : "";
+      }
+
+      // Applique l'URL depuis les cookies si dispo
+      window.addEventListener("DOMContentLoaded", () => {
+        const savedUrl = loadApiUrlFromCookie();
+        if (savedUrl) {
+          apiUrlInput.value = savedUrl;
+        }
+      });
     </script>
   </body>
 </html>
