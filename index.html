@@ -6,25 +6,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="./src/output.css" rel="stylesheet" />
   </head>
-  <body class="bg-gray-100 p-4 text-center">
-    <h1 class="text-3xl font-bold mb-4">Détection d’objets</h1>
+  <body
+    class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 text-center"
+  >
+    <h1 class="text-3xl font-bold mb-4">Détection d’objets alimentaires</h1>
 
     <div class="max-w-xl mx-auto space-y-4">
       <input
         type="text"
         id="apiUrl"
-        placeholder="rentrez l'URL de l'API + /predict"
-        class="w-full p-2 border rounded"
+        placeholder="Entrez l'URL de l'API + /predict"
+        class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
+        title="Choisissez une image à envoyer"
+        placeholder="Choisissez une image"
       />
-
       <label for="imageInput" class="block text-left font-medium mb-1"></label>
       <input
         type="file"
         id="imageInput"
         accept="image/*"
-        class="w-full p-2 border rounded"
-        title="Choisissez une image à envoyer"
-        placeholder="Choisissez une image"
+        capture="environment"
+        class="w-full p-2 border rounded bg-white dark:bg-gray-800 dark:text-white"
       />
 
       <button
@@ -33,13 +35,14 @@
       >
         Envoyer
       </button>
+
+      <!-- Spinner overlay -->
       <div
         id="spinner"
-        class="fixed inset-0 bg-white/60 backdrop-blur-sm flex justify-center items-center z-50 hidden"
+        class="fixed inset-0 bg-white/70 dark:bg-black/70 backdrop-blur-sm flex justify-center items-center h-screen z-50 hidden"
       >
-        >
         <svg
-          class="animate-spin h-12 w-12 text-white"
+          class="animate-spin h-12 w-12 text-blue-600 dark:text-blue-300"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
@@ -69,7 +72,7 @@
 
       <div
         id="results"
-        class="bg-white p-4 rounded shadow text-left hidden"
+        class="bg-white dark:bg-gray-800 p-4 rounded shadow text-left hidden"
       ></div>
     </div>
 
@@ -132,6 +135,7 @@
         formData.append("targetUrl", apiUrl);
 
         spinner.classList.remove("hidden");
+
         try {
           saveApiUrlToCookie(apiUrl);
           const response = await fetch("http://localhost:3000/proxy", {
@@ -175,7 +179,6 @@
       function drawBoxes(boxes) {
         if (!boxes || boxes.length === 0) return;
 
-        // redraw image first
         const img = new Image();
         img.onload = () => {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -205,20 +208,17 @@
         img.src = URL.createObjectURL(originalImage);
       }
 
-      // Enregistre l'URL dans un cookie (exp 30 jours)
       function saveApiUrlToCookie(url) {
         document.cookie = `apiUrl=${encodeURIComponent(
           url
         )}; max-age=2592000; path=/`;
       }
 
-      // Lit l'URL depuis les cookies
       function loadApiUrlFromCookie() {
         const match = document.cookie.match(/(?:^|;) *apiUrl=([^;]*)/);
         return match ? decodeURIComponent(match[1]) : "";
       }
 
-      // Applique l'URL depuis les cookies si dispo
       window.addEventListener("DOMContentLoaded", () => {
         const savedUrl = loadApiUrlFromCookie();
         if (savedUrl) {
